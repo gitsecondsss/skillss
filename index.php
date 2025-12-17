@@ -15,10 +15,11 @@
   <h2>Turnstile Test</h2>
   <p>If everything works, you should see a Turnstile widget below. When you solve it, an alert will pop.</p>
 
-  <div id="cf-turnstile"
-       data-sitekey="0x4AAAAAACEAdYvsKv0_uuH2"
-       data-callback="onHumanVerified">
-  </div>
+<div class="cf-turnstile"
+     data-sitekey="0x4AAAAAACEAdYvsKv0_uuH2"
+     data-callback="onHumanVerified">
+</div>
+
 
   <script>
     function onHumanVerified(token){
