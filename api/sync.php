@@ -1,5 +1,5 @@
 <?php
-// api/sync.php – validate trust_token (quiet, standard)
+// api/sync.php – validate trust_token (quiet, st andard)
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
