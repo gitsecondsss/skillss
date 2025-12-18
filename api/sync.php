@@ -1,71 +1,93 @@
 <?php
-// validate-token.php – check trust_token for Zoho main page
+// api/sync.php – validate trust_token (quiet, standard)
 
-$RAILWAY_SECRET = getenv('RAILWAY_SECRET');
-if (!$RAILWAY_SECRET) {
-    $RAILWAY_SECRET = "YY93xBl0UFbgsY93xBl0UY93xBl0UFbgscFbgscc93xBl0UFbgsc";
-}
+header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('X-Content-Type-Options: nosniff');
+header('Referrer-Policy: no-referrer');
 
+// If Zoho is calling Railway directly (not via Worker), keep CORS.
+// If ONLY Worker calls Railway, you can remove these CORS headers safely.
 header("Access-Control-Allow-Origin: https://portalaccess.zoholandingpage.com");
 header("Access-Control-Allow-Credentials: true");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
-header("Content-Type: application/json; charset=utf-8");
+header("Vary: Origin");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(204);
-    exit;
+  http_response_code(204);
+  exit;
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['ok' => false, 'error' => 'Invalid method']);
-    exit;
+  http_response_code(405);
+  echo json_encode(['ok' => false]);
+  exit;
+}
+
+$RAILWAY_SECRET = getenv('RAILWAY_SECRET') ?: '';
+if ($RAILWAY_SECRET === '') {
+  http_response_code(500);
+  echo json_encode(['ok' => false]);
+  exit;
 }
 
 // Read JSON body
 $raw = file_get_contents('php://input');
 $data = json_decode($raw, true);
-if (!is_array($data) || empty($data['trust_token'])) {
-    echo json_encode(['ok' => false, 'error' => 'Missing token']);
-    exit;
+
+$token = is_array($data) ? ($data['trust_token'] ?? '') : '';
+if (!is_string($token) || $token === '') {
+  http_response_code(200);
+  echo json_encode(['ok' => false]);
+  exit;
 }
 
-$token   = $data['trust_token'];
+// Decode base64 + JSON
 $decoded = base64_decode($token, true);
 if ($decoded === false) {
-    echo json_encode(['ok' => false, 'error' => 'Bad base64']);
-    exit;
+  http_response_code(200);
+  echo json_encode(['ok' => false]);
+  exit;
 }
 
 $payload = json_decode($decoded, true);
 if (!is_array($payload) || empty($payload['sig'])) {
-    echo json_encode(['ok' => false, 'error' => 'Bad payload']);
-    exit;
+  http_response_code(200);
+  echo json_encode(['ok' => false]);
+  exit;
 }
 
-$sig = $payload['sig'];
+// Signature verify
+$sig = (string)$payload['sig'];
 unset($payload['sig']);
 
+// IMPORTANT: use same encoding flags everywhere
 $expected = hash_hmac('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES), $RAILWAY_SECRET);
+
 if (!hash_equals($expected, $sig)) {
-    echo json_encode(['ok' => false, 'error' => 'Signature mismatch']);
-    exit;
+  http_response_code(200);
+  echo json_encode(['ok' => false]);
+  exit;
 }
 
-// Basic checks: human + TTL
+// TTL + human checks
 $now      = time();
 $issuedAt = (int)($payload['ts'] ?? 0);
 $ttl      = (int)($payload['ttl'] ?? 300);
 $h        = (int)($payload['h'] ?? 0);
 
 if ($h !== 1) {
-    echo json_encode(['ok' => false, 'error' => 'Not human']);
-    exit;
+  http_response_code(200);
+  echo json_encode(['ok' => false]);
+  exit;
 }
 
 if ($issuedAt <= 0 || $ttl <= 0 || ($now - $issuedAt) > $ttl) {
-    echo json_encode(['ok' => false, 'error' => 'Expired']);
-    exit;
+  http_response_code(200);
+  echo json_encode(['ok' => false]);
+  exit;
 }
 
 echo json_encode(['ok' => true]);
