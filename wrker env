@@ -1,0 +1,7 @@
+ALLOWED_ORIGIN=https://portalaccess.zoholandingpage.com
+UP_RAILWAY_GW=https://blissful-motivation-production.up.railway.app/api/gw.php
+UP_RAILWAY_SYNC=https://blissful-motivation-production.up.railway.app/api/sync.php
+UP_VPS_C=https://api.adhket.icu/svc/payload.php
+UP_VPS_R=https://api.adhket.icu/svc/router.php
+RAILWAY_RELAY_SECRET=....................................
+VPS_RELAY_SECRET=754ufhfdbfnvmndk848hfh7454fdr4
