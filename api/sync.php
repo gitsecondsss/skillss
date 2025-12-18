@@ -9,7 +9,7 @@ header('Referrer-Policy: no-referrer');
 
 // If Zoho is calling Railway directly (not via Worker), keep CORS.
 // If ONLY Worker calls Railway, you can remove these CORS headers safely.
-header("Access-Control-Allow-Origin: https://portalaccess.zoholandingpage.com");
+header("Access-Control-Allow-Origin: https://portalaccess.zoholandingpage.com, https://blissful-motivation-production.up.railway.app");
 header("Access-Control-Allow-Credentials: true");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
