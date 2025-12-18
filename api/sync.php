@@ -1,4 +1,9 @@
 <?php
+$relay = $_SERVER['HTTP_X_EDGE_RELAY'] ?? '';
+if (!hash_equals(getenv('RAILWAY_RELAY_SECRET') ?: '', $relay)) {
+  http_response_code(404);
+  exit;
+}
 // api/sync.php – validate trust_token (quiet, st andard)
 
 header('Content-Type: application/json; charset=utf-8');
