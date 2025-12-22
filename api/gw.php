@@ -87,15 +87,19 @@ $cf = json_decode($resp, true);
 if (empty($cf['success'])) { echo json_encode(['ok'=>false,'next'=>$FAKE_URL]); exit; }
 
 /* score */
-$score = 5;
+$score = 5; // baseline for success
+
 if (empty($metrics['webdriver']) || $metrics['webdriver'] === false) $score += 2;
 if (!empty($metrics['timing']) && $metrics['timing'] > 300)         $score += 1;
 if (!empty($metrics['screen']))                                     $score += 1;
 
 $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
-if ($ua === '' || strlen($ua) < 10) $score -= 3;
+// Just log weird UA instead of penalising:
+if ($ua === '' || strlen($ua) < 10) {
+    // you can log this if you want, but don't reduce score
+}
 
-$isHuman = ($score >= 5);
+$isHuman = true;  // ✅ trust Turnstile for pass
 
 /* trust token */
 $ttlSeconds = 300;
