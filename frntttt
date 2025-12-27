@@ -1,17 +1,3 @@
-<div id="secure-loading" style="
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  min-height:60vh;
-  font-family:'Segoe UI',system-ui,sans-serif;
-  font-size:14px;
-  color:#666;
-  text-align:center;
-">
-  Verification successful<br>
-  Please wait while we finalize access…
-</div>
-
 <div id="secure-main" style="display:none;"></div>
 
 <script>
